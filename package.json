@@ -1,8 +1,9 @@
 {
   "name": "safecheck-pro",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "main": "functions/api.js",
   "dependencies": {
-    "axios": "^1.6.0"
+    "axios": "^1.6.0",
+    "whois-json": "^2.3.0"
   }
 }
