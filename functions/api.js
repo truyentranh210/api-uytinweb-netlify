@@ -1,13 +1,14 @@
 const axios = require("axios");
+const whois = require("whois-json");
 
-const GOOGLE_API_KEY = "AIzaSyBk1ABUXXTfzb5JVCk_jSzDUn0GfjMci9I"; // 🔑 Điền API Key tại đây
+const GOOGLE_API_KEY = "AIzaSyBk1ABUXXTfzb5JVCk_jSzDUn0GfjMci9I"; // 🔑 Dán Google Safe Browsing API key tại đây
 const SAFE_BROWSING_URL = `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${GOOGLE_API_KEY}`;
 
 exports.handler = async (event) => {
   const path = event.path.split("/").pop();
   const params = event.queryStringParameters || {};
 
-  // === /home ===
+  // ====== /home ======
   if (path === "home") {
     return {
       statusCode: 200,
@@ -23,7 +24,7 @@ exports.handler = async (event) => {
     };
   }
 
-  // === /antoan ===
+  // ====== /antoan ======
   if (path === "antoan") {
     const url = params.url;
     if (!url) {
@@ -36,12 +37,9 @@ exports.handler = async (event) => {
     try {
       const domain = new URL(url).hostname;
 
-      // --- Gọi Google Safe Browsing API ---
-      const response = await axios.post(SAFE_BROWSING_URL, {
-        client: {
-          clientId: "safecheck-app",
-          clientVersion: "1.0"
-        },
+      // 1️⃣ Gọi Google Safe Browsing API
+      const res = await axios.post(SAFE_BROWSING_URL, {
+        client: { clientId: "safecheck", clientVersion: "1.1" },
         threatInfo: {
           threatTypes: [
             "MALWARE",
@@ -55,40 +53,60 @@ exports.handler = async (event) => {
         }
       });
 
-      const isUnsafe = response.data && response.data.matches;
+      const isUnsafe = res.data && res.data.matches && res.data.matches.length > 0;
 
-      // --- Phân tích độ tin cậy ---
-      let trustScore = 95;
+      // 2️⃣ Lấy thông tin WHOIS (để tính tuổi domain)
+      let domainAgeYears = 0;
+      try {
+        const info = await whois(domain);
+        if (info.creationDate) {
+          const create = new Date(info.creationDate);
+          const now = new Date();
+          domainAgeYears = Math.floor((now - create) / (365 * 24 * 60 * 60 * 1000));
+        }
+      } catch {
+        domainAgeYears = 0;
+      }
+
+      // 3️⃣ Tính điểm tin cậy
+      let trustScore = 100;
       let trustLevel = "Cao";
       let warning = "✅ Trang web an toàn để truy cập.";
 
+      // Giảm điểm nếu không HTTPS
+      if (!url.startsWith("https://")) trustScore -= 15;
+
+      // Giảm điểm nếu domain mới
+      if (domainAgeYears < 1) trustScore -= 25;
+
+      // Giảm điểm nếu tên nghi ngờ
+      const suspiciousWords = ["free", "giveaway", "login", "xn--", "bonus", "prize"];
+      if (suspiciousWords.some(w => domain.includes(w))) trustScore -= 20;
+
+      // Nếu API Google báo nguy hiểm
       if (isUnsafe) {
-        trustScore = 20;
+        trustScore = 10;
         trustLevel = "Thấp";
-        warning =
-          "🚨 Cảnh báo: Trang web có dấu hiệu chứa mã độc hoặc lừa đảo! Không nên truy cập.";
-      } else if (
-        domain.includes("free") ||
-        domain.includes("giveaway") ||
-        domain.includes("login") ||
-        domain.includes("xn--")
-      ) {
-        trustScore = 60;
-        trustLevel = "Trung bình";
-        warning =
-          "⚠️ Có thể là trang quảng cáo hoặc giả mạo. Hãy kiểm tra kỹ nguồn trước khi truy cập.";
+        warning = "🚨 Cảnh báo: Trang web có dấu hiệu lừa đảo hoặc chứa mã độc!";
       }
 
-      // --- Trả về kết quả JSON ---
+      // Gắn mức độ tin cậy
+      if (trustScore >= 80) trustLevel = "Cao";
+      else if (trustScore >= 50) trustLevel = "Trung bình";
+      else trustLevel = "Thấp";
+
+      // 4️⃣ Trả kết quả
       return {
         statusCode: 200,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           website: url,
           domain,
-          trustLevel,
           trustScore,
+          trustLevel,
           warning,
+          domainAgeYears,
+          isUnsafe,
           checkedAt: new Date().toISOString()
         })
       };
@@ -96,14 +114,14 @@ exports.handler = async (event) => {
       return {
         statusCode: 500,
         body: JSON.stringify({
-          error: "Không thể phân tích URL hoặc lỗi từ API.",
+          error: "Lỗi xử lý URL hoặc kiểm tra API thất bại.",
           details: error.message
         })
       };
     }
   }
 
-  // --- Mặc định ---
+  // ====== Mặc định ======
   return {
     statusCode: 404,
     body: JSON.stringify({ error: "Không tìm thấy endpoint!" })
