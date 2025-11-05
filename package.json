@@ -1,5 +1,5 @@
 {
-  "name": "safecheck-api",
+  "name": "safecheck-pro",
   "version": "1.0.0",
   "main": "functions/api.js",
   "dependencies": {
