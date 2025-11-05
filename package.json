@@ -1,0 +1,8 @@
+{
+  "name": "safecheck-api",
+  "version": "1.0.0",
+  "main": "functions/api.js",
+  "dependencies": {
+    "axios": "^1.6.0"
+  }
+}
